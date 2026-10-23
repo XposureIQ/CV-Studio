@@ -5,7 +5,6 @@ export type OtpPurpose = "account" | "download";
 
 export type UserSession = {
   email: string;
-  phone: string;
   expiresAt: number;
 };
 
@@ -19,7 +18,6 @@ export class OtpError extends Error {
 type StoredOtp = {
   digest: string;
   email: string;
-  phone: string;
   expiresAt: number;
 };
 
@@ -99,11 +97,9 @@ function otpStorageKey(purpose: OtpPurpose, email: string) {
 
 export async function sendOtp(input: {
   email: string;
-  phone: string;
   purpose: OtpPurpose;
 }) {
   const email = input.email.trim().toLowerCase();
-  const phone = input.phone.trim();
   const redisAvailable = redisConfigured();
   if (productionMode() && !redisAvailable) throw new Error("OTP delivery is not configured: add Upstash Redis credentials.");
   if (productionMode() && !secretsConfigured()) throw new Error("OTP delivery is not configured: add OTP and session signing secrets.");
@@ -111,9 +107,8 @@ export async function sendOtp(input: {
   const otp = String(randomInt(0, 1_000_000)).padStart(6, "0");
   const key = otpStorageKey(input.purpose, email);
   const entry: StoredOtp = {
-    digest: digest(`${input.purpose}:${email}:${phone}:${otp}`),
+    digest: digest(`${input.purpose}:${email}:${otp}`),
     email,
-    phone,
     expiresAt: Date.now() + OTP_TTL_SECONDS * 1000
   };
   if (redisAvailable) {
@@ -121,10 +116,6 @@ export async function sendOtp(input: {
     const sends = await redisCommand<number>(["INCR", rateKey]);
     if (sends === 1) await redisCommand(["EXPIRE", rateKey, 900]);
     if (sends > 5) throw new OtpError("Too many OTP requests. Please try again in 15 minutes.", 429);
-    const phoneRateKey = `ats:otp-phone-rate:${input.purpose}:${emailKey(phone)}`;
-    const phoneSends = await redisCommand<number>(["INCR", phoneRateKey]);
-    if (phoneSends === 1) await redisCommand(["EXPIRE", phoneRateKey, 900]);
-    if (phoneSends > 5) throw new OtpError("Too many OTP requests for this mobile. Please try again in 15 minutes.", 429);
     await redisCommand(["SET", key, JSON.stringify(entry), "EX", OTP_TTL_SECONDS]);
   } else if (developmentFallbackAllowed()) {
     devValues.set(key, JSON.stringify(entry));
@@ -134,69 +125,48 @@ export async function sendOtp(input: {
 
   const resendKey = process.env.RESEND_API_KEY;
   const fromEmail = process.env.OTP_FROM_EMAIL;
-  const twilioSid = process.env.TWILIO_ACCOUNT_SID;
-  const twilioToken = process.env.TWILIO_AUTH_TOKEN;
-  const twilioFrom = process.env.TWILIO_FROM_NUMBER;
   const emailReady = Boolean(resendKey && fromEmail);
-  const smsReady = Boolean(twilioSid && twilioToken && twilioFrom);
-  const providerReady = emailReady && smsReady;
 
-  if (emailReady !== smsReady) {
-    if (redisAvailable) await redisCommand(["DEL", key]);
-    else devValues.delete(key);
-    throw new OtpError("Configure both email and SMS providers, or remove the incomplete provider settings.", 503);
-  }
-
-  if (providerReady) {
+  if (emailReady) {
     const message = `Your ATS-Craft Pro ${input.purpose === "download" ? "download" : "sign-in"} code is ${otp}. It expires in 5 minutes. If you did not request this, ignore this message.`;
-    const deliveries = await Promise.allSettled([
-      fetch("https://api.resend.com/emails", {
+    let delivery: Response;
+    try {
+      delivery = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: { Authorization: `Bearer ${resendKey}`, "Content-Type": "application/json" },
         body: JSON.stringify({ from: fromEmail, to: [email], subject: "Your ATS-Craft Pro verification code", text: message })
-      }),
-      (async () => {
-        const body = new URLSearchParams({ To: phone, From: twilioFrom!, Body: message });
-        const auth = Buffer.from(`${twilioSid}:${twilioToken}`).toString("base64");
-        return fetch(`https://api.twilio.com/2010-04-01/Accounts/${twilioSid}/Messages.json`, {
-          method: "POST",
-          headers: { Authorization: `Basic ${auth}`, "Content-Type": "application/x-www-form-urlencoded" },
-          body
-        });
-      })()
-    ]);
-    const failures = deliveries.flatMap((delivery) => {
-      if (delivery.status === "rejected") return [delivery.reason];
-      return delivery.value.ok ? [] : [new Error(`OTP provider returned ${delivery.value.status}.`)];
-    });
-    if (failures.length) {
+      });
+    } catch {
       if (redisAvailable) await redisCommand(["DEL", key]);
       else devValues.delete(key);
-      throw new OtpError("Could not deliver the OTP to both email and mobile. Check provider configuration and try again.", 503);
+      throw new OtpError("Could not connect to the email provider. Please try again.", 503);
     }
-    return { expiresInSeconds: OTP_TTL_SECONDS, channels: ["email", "mobile"] };
+    if (!delivery.ok) {
+      if (redisAvailable) await redisCommand(["DEL", key]);
+      else devValues.delete(key);
+      throw new OtpError(`Could not deliver the OTP email (provider returned ${delivery.status}). Check Resend configuration and try again.`, 503);
+    }
+    return { expiresInSeconds: OTP_TTL_SECONDS, channels: ["email"] };
   }
 
   if (productionMode()) {
     if (redisAvailable) await redisCommand(["DEL", key]);
-    throw new Error("OTP delivery requires both Resend email and Twilio SMS environment settings.");
+    throw new Error("OTP delivery is not configured: add Resend API credentials and a verified sender email.");
   }
 
   return {
     expiresInSeconds: OTP_TTL_SECONDS,
-    channels: ["email", "mobile"],
+    channels: ["email"],
     developmentCode: otp
   };
 }
 
 export async function verifyOtp(input: {
   email: string;
-  phone: string;
   code: string;
   purpose: OtpPurpose;
 }) {
   const email = input.email.trim().toLowerCase();
-  const phone = input.phone.trim();
   const key = otpStorageKey(input.purpose, email);
   const redisAvailable = redisConfigured();
   const attemptsKey = `${key}:attempts`;
@@ -230,9 +200,9 @@ export async function verifyOtp(input: {
     else devValues.delete(key);
     throw new OtpError("This code expired. Request a new OTP.", 400);
   }
-  const expected = digest(`${input.purpose}:${email}:${phone}:${input.code}`);
-  if (saved.email !== email || saved.phone !== phone || !secureCompare(saved.digest, expected)) {
-    throw new OtpError("The code or contact details do not match.", 400);
+  const expected = digest(`${input.purpose}:${email}:${input.code}`);
+  if (saved.email !== email || !secureCompare(saved.digest, expected)) {
+    throw new OtpError("The code does not match this email address.", 400);
   }
 
   if (redisAvailable) await redisCommand(["DEL", key, attemptsKey]);
@@ -257,18 +227,17 @@ function verifySessionToken(token: string): UserSession | null {
   if (left.length !== right.length || !timingSafeEqual(left, right)) return null;
   try {
     const session = JSON.parse(Buffer.from(value, "base64url").toString("utf8")) as UserSession;
-    if (!session.email || !session.phone || session.expiresAt <= Date.now()) return null;
-    return session;
+    if (!session.email || session.expiresAt <= Date.now()) return null;
+    return { email: session.email, expiresAt: session.expiresAt };
   } catch {
     return null;
   }
 }
 
-export async function createSession(input: { email: string; phone: string }) {
+export async function createSession(input: { email: string }) {
   const store = await cookies();
   const session: UserSession = {
     email: input.email.trim().toLowerCase(),
-    phone: input.phone.trim(),
     expiresAt: Date.now() + SESSION_TTL_SECONDS * 1000
   };
   store.set(SESSION_COOKIE, signSession(session), {
@@ -322,9 +291,6 @@ export function isOtpProviderConfigured() {
   return Boolean(
     process.env.RESEND_API_KEY &&
     process.env.OTP_FROM_EMAIL &&
-    process.env.TWILIO_ACCOUNT_SID &&
-    process.env.TWILIO_AUTH_TOKEN &&
-    process.env.TWILIO_FROM_NUMBER &&
     process.env.UPSTASH_REDIS_REST_URL &&
     process.env.UPSTASH_REDIS_REST_TOKEN &&
     process.env.OTP_HMAC_SECRET &&

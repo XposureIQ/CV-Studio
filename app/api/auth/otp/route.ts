@@ -15,10 +15,6 @@ function validEmail(value: unknown): value is string {
   return typeof value === "string" && value.length <= 254 && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
 }
 
-function validPhone(value: unknown): value is string {
-  return typeof value === "string" && /^\+[1-9]\d{7,14}$/.test(value);
-}
-
 export async function POST(request: Request) {
   let body: unknown;
   try {
@@ -42,25 +38,22 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Sign in before requesting a download code." }, { status: 401 });
   }
   const email = purpose === "download" ? session!.email : input.email;
-  const phone = purpose === "download" ? session!.phone : input.phone;
-  if (!validEmail(email) || !validPhone(phone)) {
-    return NextResponse.json({
-      error: "Enter a valid email and mobile number in international format (for example, +919876543210)."
-    }, { status: 400 });
+  if (!validEmail(email)) {
+    return NextResponse.json({ error: "Enter a valid email address." }, { status: 400 });
   }
 
   try {
     if (action === "send") {
-      const result = await sendOtp({ email, phone, purpose });
+      const result = await sendOtp({ email, purpose });
       return NextResponse.json(result);
     }
 
     if (typeof input.code !== "string" || !/^\d{6}$/.test(input.code)) {
       return NextResponse.json({ error: "Enter the six-digit code." }, { status: 400 });
     }
-    await verifyOtp({ email, phone, code: input.code, purpose });
+    await verifyOtp({ email, code: input.code, purpose });
     if (purpose === "account") {
-      await createSession({ email, phone });
+      await createSession({ email });
       return NextResponse.json({ verified: true, purpose });
     }
     const downloadToken = await createDownloadGrant(email);

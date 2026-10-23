@@ -18,7 +18,6 @@ import {
   Mail,
   Plus,
   ShieldCheck,
-  Smartphone,
   Sparkles,
   Trash2,
   Upload,
@@ -439,11 +438,10 @@ async function createDocx(
   downloadFile(blob, fileName);
 }
 
-type AuthSession = { email: string; phone: string; expiresAt: number };
+type AuthSession = { email: string; expiresAt: number };
 
 function AuthGate({ onAuthenticated }: { onAuthenticated: (session: AuthSession) => void }) {
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
   const [sent, setSent] = useState(false);
   const [developmentCode, setDevelopmentCode] = useState("");
@@ -457,7 +455,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (session: AuthSession)
       const response = await fetch("/api/auth/otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "send", purpose: "account", email, phone })
+        body: JSON.stringify({ action: "send", purpose: "account", email })
       });
       const result = await response.json() as { error?: string; developmentCode?: string };
       if (!response.ok) throw new Error(result.error || "Could not send the verification code.");
@@ -478,7 +476,7 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (session: AuthSession)
       const response = await fetch("/api/auth/otp", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "verify", purpose: "account", email, phone, code })
+        body: JSON.stringify({ action: "verify", purpose: "account", email, code })
       });
       const result = await response.json() as { error?: string };
       if (!response.ok) throw new Error(result.error || "The verification code could not be checked.");
@@ -499,15 +497,14 @@ function AuthGate({ onAuthenticated }: { onAuthenticated: (session: AuthSession)
         <span className="auth-brand"><span className="brand-icon"><FileText size={16} /></span> ATS-Craft Pro</span>
         <p className="eyebrow mt-8">YOUR CAREER, IN FOCUS</p>
         <h1>Create your CV, for free.</h1>
-        <p className="auth-description">Verify your email and mobile with one code sent to both. Your CV stays in this browser.</p>
+        <p className="auth-description">Verify your email with a one-time code. Your CV stays in this browser.</p>
         <form className="auth-form" onSubmit={verify}>
           <label className="field"><span><Mail className="mr-1 inline" size={12} /> Email address</span><input type="email" required autoComplete="email" value={email} onChange={(event) => setEmail(event.target.value)} placeholder="you@example.com" disabled={sent} /></label>
-          <label className="field"><span><Smartphone className="mr-1 inline" size={12} /> Mobile number (international format)</span><input type="tel" required autoComplete="tel" pattern="\+[1-9]\d{7,14}" value={phone} onChange={(event) => setPhone(event.target.value)} placeholder="+919876543210" disabled={sent} /><span className="field-hint">Enter country code, e.g. +91 for India.</span></label>
           {sent && <label className="field"><span><KeyRound className="mr-1 inline" size={12} /> Six-digit verification code</span><input inputMode="numeric" autoComplete="one-time-code" pattern="\d{6}" maxLength={6} required value={code} onChange={(event) => setCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label>}
           {developmentCode && <p className="development-code">Local development OTP: <strong>{developmentCode}</strong></p>}
           {error && <p className="form-error" role="alert">{error}</p>}
           {!sent
-            ? <button className="button button-primary w-full" disabled={busy} onClick={(event) => { event.preventDefault(); void requestCode(); }} type="button">{busy ? <LoaderCircle className="animate-spin" size={14} /> : <ShieldCheck size={14} />} Send one code to email &amp; mobile</button>
+            ? <button className="button button-primary w-full" disabled={busy} onClick={(event) => { event.preventDefault(); void requestCode(); }} type="button">{busy ? <LoaderCircle className="animate-spin" size={14} /> : <ShieldCheck size={14} />} Send email code</button>
             : <div className="auth-actions"><button className="button button-secondary" disabled={busy} onClick={() => { setSent(false); setCode(""); setDevelopmentCode(""); }} type="button">Change details</button><button className="button button-primary" disabled={busy || code.length !== 6} type="submit">{busy ? <LoaderCircle className="animate-spin" size={14} /> : <Check size={14} />} Verify &amp; create CV</button></div>}
         </form>
         <p className="auth-foot"><LockKeyhole size={12} /> Free to use. Each download needs a fresh OTP. Optional ₹25 support is never required.</p>
@@ -690,7 +687,7 @@ export default function HomePage() {
       setDownloadDevelopmentCode(result.developmentCode || "");
       setDownloadCodeMessage(isResend
         ? "A new code was sent. Use the latest code; the previous one is no longer valid."
-        : "Code sent. Check your email and mobile.");
+        : "Code sent. Check your email.");
     } catch (error) {
       setDownloadError(error instanceof Error ? error.message : "Could not send your download code.");
     } finally {
@@ -1219,7 +1216,7 @@ export default function HomePage() {
               <div><span className="mb-2 inline-flex items-center gap-1.5 text-[9px] font-bold tracking-[.1em] text-[#667b62]"><ShieldCheck size={13} /> SECURE DOWNLOAD</span><h2 id="download-otp-title">Verify this download.</h2></div>
               <button aria-label="Close verification dialog" className="delete-button" onClick={() => setDownloadFormat(null)} type="button"><X size={16} /></button>
             </div>
-            <p>A fresh six-digit code is sent to both <strong>{session?.email}</strong> and <strong>{session?.phone}</strong> for each export. One verified code authorizes one file.</p>
+            <p>A fresh six-digit code is sent to <strong>{session?.email}</strong> for each export. One verified code authorizes one file.</p>
             {downloadOtpSent ? (
               <form className="auth-form" onSubmit={(event) => { void verifyAndDownload(event); }}>
                 <label className="field"><span><KeyRound className="mr-1 inline" size={12} /> Six-digit code</span><input autoComplete="one-time-code" inputMode="numeric" pattern="\d{6}" maxLength={6} required value={downloadCode} onChange={(event) => setDownloadCode(event.target.value.replace(/\D/g, "").slice(0, 6))} placeholder="000000" /></label>
@@ -1235,7 +1232,7 @@ export default function HomePage() {
               <div className="modal-actions">
                 {downloadError && <p className="form-error" role="alert">{downloadError}</p>}
                 <button className="button button-secondary" onClick={() => setDownloadFormat(null)} type="button">Cancel</button>
-                <button className="button button-primary" disabled={downloadBusy} onClick={() => { void sendDownloadCode(); }} type="button">{downloadBusy ? <LoaderCircle className="animate-spin" size={14} /> : <Mail size={14} />} Send code to email &amp; mobile</button>
+                <button className="button button-primary" disabled={downloadBusy} onClick={() => { void sendDownloadCode(); }} type="button">{downloadBusy ? <LoaderCircle className="animate-spin" size={14} /> : <Mail size={14} />} Send email code</button>
               </div>
             )}
             <p className="modal-note">Downloads are always free. Your code expires after five minutes and cannot be reused.</p>

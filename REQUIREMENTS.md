@@ -10,7 +10,7 @@ This document records the product and technical requirements agreed so far and d
 
 - CV creation and downloads are free. There is no subscription, checkout, or mandatory payment.
 - Users may optionally contribute INR 25 through a UPI QR code. Support must never block access to the builder or downloads.
-- Users provide an email address and mobile number and verify using one six-digit code sent to both channels.
+- Users authenticate with a six-digit OTP sent only to their email; SMS is not required.
 - Every individual download requires a new OTP. A successfully verified code authorizes one download in the app flow.
 - CV content is kept in the user's browser; importing a file must not upload its contents to the application server.
 - ATS compatibility is a design goal, not a guarantee of parser results, interview selection, or employment.
@@ -19,11 +19,11 @@ This document records the product and technical requirements agreed so far and d
 
 ### 3.1 Authentication and sessions
 
-- **FR-AUTH-1:** Before using the builder, a user must provide a valid email address and a mobile number in international format.
-- **FR-AUTH-2:** On request, generate one six-digit OTP and send the same code to the supplied email and mobile number.
+- **FR-AUTH-1:** Before using the builder, a user must provide a valid email address.
+- **FR-AUTH-2:** On request, generate one six-digit OTP and send it to the supplied email address.
 - **FR-AUTH-3:** A valid account OTP starts an authenticated session. Users can refresh the page and retain the session, or sign out.
 - **FR-AUTH-4:** An OTP expires after five minutes and can be verified no more than five times.
-- **FR-AUTH-5:** In production, OTP requests are rate-limited by email and mobile number to five requests per 15-minute window.
+- **FR-AUTH-5:** In production, OTP requests are rate-limited by email to five requests per 15-minute window.
 - **FR-AUTH-6:** A missing or partial production configuration must result in an explicit error; the app must not silently treat a user as authenticated.
 - **FR-AUTH-7:** Local development may use an in-memory session and show the development OTP in the interface. This fallback is not production-safe and does not persist through server restarts.
 
@@ -64,7 +64,7 @@ This document records the product and technical requirements agreed so far and d
 - **FR-EXPORT-1:** Export an editable Microsoft Word `.docx` document.
 - **FR-EXPORT-2:** Offer a Google Docs-compatible `.docx` export for upload to Google Drive.
 - **FR-EXPORT-3:** Export an A4 PDF containing selectable text.
-- **FR-EXPORT-4:** Before each export, request a fresh download OTP and send it to the authenticated email and mobile number.
+- **FR-EXPORT-4:** Before each export, request a fresh download OTP and send it to the authenticated email address.
 - **FR-EXPORT-5:** A download OTP expires after five minutes, is limited to five verification attempts, and cannot be reused.
 - **FR-EXPORT-6:** A successful verification creates a short-lived, one-use download grant. The application consumes the grant before running the selected client-side export.
 - **FR-EXPORT-7:** Downloads are unlimited in number and are not conditional on payment.
@@ -98,8 +98,7 @@ This document records the product and technical requirements agreed so far and d
 - **PDF import:** `pdfjs-dist`.
 - **UPI QR:** `qrcode`.
 - **Production OTP and one-use grant storage:** Upstash Redis REST API.
-- **Email delivery:** Resend.
-- **SMS delivery:** Twilio Programmable Messaging.
+- **Email OTP delivery:** Resend. Free-tier availability and sender requirements are subject to current provider quotas and terms; SMS delivery is not used.
 - **Local development:** Node.js and npm; run `npm install`, `npm run dev`, `npm run typecheck`, and `npm run build`.
 
 ## 6. Environment and deployment requirements
@@ -109,11 +108,10 @@ Production setup requires the environment variables documented in `.env.example`
 - `OTP_HMAC_SECRET` and `SESSION_HMAC_SECRET`: distinct, random signing secrets.
 - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`: persistent Redis storage for OTPs, rate limits, and download grants.
 - `RESEND_API_KEY` and `OTP_FROM_EMAIL`: Resend credentials and a verified sender.
-- `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, and `TWILIO_FROM_NUMBER`: Twilio credentials and an eligible sender.
 - `SUPPORT_UPI_ID`: valid recipient ID to enable the optional UPI QR.
 - `SUPPORT_PAYEE_NAME`: optional display name for the recipient.
 
-The deployment owner must provision and configure these services, verify sender/domain requirements, and deploy the application. A free hosting-provider subdomain (for example, a Vercel subdomain) is a deployment target, not a domain already provisioned by the application.
+The deployment owner must provision and configure these services, verify sender/domain requirements, and deploy the application. A free hosting-provider subdomain (for example, a Vercel subdomain) is the preferred public URL and is assigned by the host after deployment; it is not provisioned by the application. The hosting subdomain does not automatically provide a verified email-sending domain. Free tiers have provider-specific eligibility rules and quotas and are not guaranteed to cover every usage level without charge.
 
 ## 7. Current implementation status and limitations
 
@@ -131,13 +129,13 @@ The deployment owner must provision and configure these services, verify sender/
 | Payment processing, subscription, or checkout | Not implemented and intentionally excluded; the product is free |
 | Hosting/domain deployment | Not completed; deployment account and configuration are required |
 
-The one-use grant protects the normal application download flow: the client consumes it before generating a file locally. It is not a tamper-proof server-side restriction on the exported file, since document generation happens in the browser. Likewise, verifying one shared OTP sent to both channels does not independently prove control of each channel.
+The one-use grant protects the normal application download flow: the client consumes it before generating a file locally. It is not a tamper-proof server-side restriction on the exported file, since document generation happens in the browser.
 
 ## 8. Acceptance criteria
 
 The implementation meets the current product scope when:
 
-1. A user can authenticate with an OTP sent to the provided email and mobile, or see a clear setup failure when production services are not configured.
+1. A user can authenticate with an OTP sent to their email, or see a clear setup failure when production services are not configured.
 2. The user can create or import a CV, edit the fields, choose a category, experience tier, and visual style, and see the preview update.
 3. The user can download Word, Google Docs-compatible DOCX, or PDF without payment, with a fresh OTP required for each file in the normal app flow.
 4. PDF/DOCX import is performed locally, rejected when unsupported or oversized, and clearly reports when no selectable text is found.

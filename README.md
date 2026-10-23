@@ -19,20 +19,20 @@ Open `http://localhost:3000`. To validate a production build, run `npm run typec
 - Job-category keyword suggestions and tailored advice for five experience tiers
 - 120 ATS-conscious style combinations: six accent themes, five spacing options, and four header alignments
 - Word and Google Docs-compatible `.docx` exports, plus a text-based PDF export
-- Free CV creation and unlimited downloads; each download requires a fresh OTP delivered to the signed-in email and mobile
+- Free CV creation and unlimited downloads; each download requires a fresh OTP sent to the signed-in email
 - Import selectable text from PDF and DOCX files directly in the browser
 - Optional fixed ₹25 UPI support QR; it never gates CV creation or downloads
 - Locally stored CV content; server-side OTP rate limits and one-time grants use Upstash Redis
 
 ## Configure OTP and optional UPI support
 
-Copy `.env.example` to `.env.local`. Add Resend, Twilio, and Upstash credentials to enable email/mobile verification outside local development. Generate separate random `OTP_HMAC_SECRET` and `SESSION_HMAC_SECRET` values. Do not commit `.env.local` or expose credentials to the browser. OTPs expire after five minutes, have a five-attempt verification limit, and are rate-limited per address. Production mode fails closed when required provider/storage settings are missing.
+Copy `.env.example` to `.env.local`. Add Resend and Upstash credentials to enable email OTP authentication outside local development. Generate separate random `OTP_HMAC_SECRET` and `SESSION_HMAC_SECRET` values. Do not commit `.env.local` or expose credentials to the browser. OTPs expire after five minutes, have a five-attempt verification limit, and are rate-limited per email address. Production mode fails closed when required provider/storage settings are missing. Resend and Upstash may offer free tiers, but quotas, sender verification requirements, and service terms apply; check current provider limits before launch.
 
 For optional support, set `SUPPORT_UPI_ID` and optionally `SUPPORT_PAYEE_NAME`. The app generates a UPI QR for ₹25. It is voluntary; no payment is requested for CV creation or download. The owner is responsible for configuring a valid recipient UPI ID and complying with applicable payment rules.
 
 ## Free deployment
 
-Deploy the repository through your hosting account (for example, Vercel's free tier) to get its provider subdomain, such as `your-project.vercel.app`. Add the environment variables from `.env.example` in the deployment settings, then redeploy. The app cannot claim a hosting subdomain or activate provider accounts without the owner's hosting/provider access. Resend sender verification, Twilio country/sender rules, and a persistent Upstash Redis database must be configured before production OTP delivery works.
+Deploy the repository through your hosting account (for example, Vercel's free tier) to receive a free provider subdomain, such as `your-project.vercel.app`. Add the environment variables from `.env.example` in the deployment settings, then redeploy. The app cannot claim a hosting subdomain or activate provider accounts without the owner's hosting/provider access. Resend sender verification and a persistent Upstash Redis database must be configured before production OTP delivery works. The free hosting subdomain does not automatically provide a verified email-sending domain. Hosting and provider free tiers have eligibility rules and quotas, so the total setup is not guaranteed to remain free for every use.
 
 ## Import, privacy and ATS notes
 
